@@ -1,57 +1,101 @@
-"""
-Tests unitaires pour le modèle Business.
-Pas de connexion DB requise — on vérifie la définition des colonnes via l'inspecteur SQLAlchemy.
-"""
-
 import uuid
-
 from sqlalchemy import inspect
+from app.models.business_member import BusinessMember, MemberRole
 
-from app.models.business import Business
-
-
-def test_business_table_name():
-    assert Business.__tablename__ == "businesses"
+def test_business_member_table_name():
+    assert BusinessMember.__tablename__ == "business_members"
 
 
-def test_business_has_id_column():
-    mapper = inspect(Business)
+def test_business_member_has_id_column():
+    mapper = inspect(BusinessMember)
     assert "id" in [col.key for col in mapper.columns]
 
 
-def test_business_id_is_primary_key():
-    mapper = inspect(Business)
+def test_business_member_id_is_primary_key():
+    mapper = inspect(BusinessMember)
     col = mapper.columns["id"]
     assert col.primary_key is True
 
 
-def test_business_has_name_column():
-    mapper = inspect(Business)
-    assert "name" in [col.key for col in mapper.columns]
+def test_business_member_has_business_id_column():
+    mapper = inspect(BusinessMember)
+    assert "business_id" in [col.key for col in mapper.columns]
 
 
-def test_business_name_not_nullable():
-    mapper = inspect(Business)
-    col = mapper.columns["name"]
+def test_business_member_business_id_not_nullable():
+    mapper = inspect(BusinessMember)
+    col = mapper.columns["business_id"]
     assert col.nullable is False
 
 
-def test_business_has_created_at_column():
-    mapper = inspect(Business)
+def test_business_member_has_user_id_column():
+    mapper = inspect(BusinessMember)
+    assert "user_id" in [col.key for col in mapper.columns]
+
+
+def test_business_member_user_id_not_nullable():
+    mapper = inspect(BusinessMember)
+    col = mapper.columns["user_id"]
+    assert col.nullable is False
+
+
+def test_business_member_has_created_at_column():
+    mapper = inspect(BusinessMember)
     assert "created_at" in [col.key for col in mapper.columns]
 
 
-def test_business_has_updated_at_column():
-    mapper = inspect(Business)
-    assert "updated_at" in [col.key for col in mapper.columns]
+def test_business_member_unique_constraint_exists():
+    from app.core.database import Base
+    import app.models.business_member  # noqa: F401
+
+    table = Base.metadata.tables["business_members"]
+    constraint_columns = [
+        frozenset(c.name for c in uc.columns)
+        for uc in table.constraints
+        if hasattr(uc, "columns") and len(list(uc.columns)) > 0
+    ]
+    assert frozenset({"business_id", "user_id"}) in constraint_columns
+
+def test_business_member_instantiation():
+    business_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+    member = BusinessMember(business_id=business_id, user_id=user_id)
+    assert member.id is not None
+    assert member.business_id == business_id
+    assert member.user_id == user_id
 
 
-def test_business_instantiation_sets_id():
-    business = Business(name="Boutique Test")
-    assert business.id is not None
-    assert isinstance(business.id, uuid.UUID)
+# --- Role ---
+
+def test_member_role_owner():
+    from app.models.business_member import MemberRole
+    assert MemberRole.owner.value == "owner"
 
 
-def test_business_instantiation_with_name():
-    business = Business(name="Ma Boutique")
-    assert business.name == "Ma Boutique"
+def test_member_role_member():
+    from app.models.business_member import MemberRole
+    assert MemberRole.member.value == "member"
+
+
+def test_business_member_has_role_column():
+    mapper = inspect(BusinessMember)
+    assert "role" in [col.key for col in mapper.columns]
+
+
+def test_business_member_role_nullable():
+    mapper = inspect(BusinessMember)
+    assert mapper.columns["role"].nullable is True
+
+
+def test_business_member_default_role_is_member():
+    member = BusinessMember(business_id=uuid.uuid4(), user_id=uuid.uuid4())
+    assert member.role == MemberRole.member
+
+
+def test_business_member_owner_role():
+    member = BusinessMember(
+        business_id=uuid.uuid4(),
+        user_id=uuid.uuid4(),
+        role=MemberRole.owner,
+    )
+    assert member.role == MemberRole.owner

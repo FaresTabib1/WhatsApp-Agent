@@ -24,6 +24,11 @@ class User(Base):
         String(255),
         nullable=False,
     )
+    hashed_password: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        default=None,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -35,12 +40,10 @@ class User(Base):
         onupdate=func.now(),
         nullable=False,
     )
-
     memberships: Mapped[list["BusinessMember"]] = relationship(  # noqa: F821
         "BusinessMember",
         back_populates="user",
     )
-
     def __init__(self, **kwargs):
         if kwargs.get("id") is None:
             kwargs["id"] = uuid.uuid4()

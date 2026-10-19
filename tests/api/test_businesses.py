@@ -1,8 +1,6 @@
 """
 Tests d'intégration légers pour les routes /businesses.
-La session de base de données est surchargée via dependency_overrides — aucune base active requise.
-
-NOTE : Les endpoints ne sont pas encore sécurisés (authentification absente).
+La session de base de données et l'utilisateur courant sont surchargés via dependency_overrides.
 """
 
 import uuid
@@ -13,12 +11,22 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.core.database import get_db
+from app.core.dependencies import get_current_user
 from app.main import app
 from app.models.business import Business
+from app.models.business_member import BusinessMember, MemberRole
+from app.models.user import User
 
 
 @pytest.fixture
-def mock_db_session():
+def test_user():
+    user = User(email="merchant@example.com")
+    user.id = uuid.uuid4()
+    return user
+
+
+@pytest.fixture
+def mock_db_session(test_user):
     session = AsyncMock()
     session.add = MagicMock()
 
@@ -30,15 +38,30 @@ def mock_db_session():
             instance.updated_at = now
 
     session.refresh.side_effect = fake_refresh
+
+    # Résultat par défaut pour les vérifications de membership (require_business_member)
+    fake_member = BusinessMember(
+        business_id=uuid.uuid4(),
+        user_id=test_user.id,
+        role=MemberRole.owner,
+    )
+    result_mock = MagicMock()
+    result_mock.scalar_one_or_none.return_value = fake_member
+    session.execute.return_value = result_mock
+
     return session
 
 
 @pytest.fixture
-def client(mock_db_session):
+def client(mock_db_session, test_user):
     async def override_get_db():
         yield mock_db_session
 
+    async def override_get_current_user():
+        return test_user
+
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = override_get_current_user
     test_client = TestClient(app)
     yield test_client
     app.dependency_overrides.clear()
@@ -53,7 +76,7 @@ def test_create_business_success(client, mock_db_session):
     assert "id" in data
     assert "created_at" in data
     assert "updated_at" in data
-    mock_db_session.add.assert_called_once()
+    assert mock_db_session.add.call_count == 2
     mock_db_session.commit.assert_awaited_once()
     mock_db_session.refresh.assert_awaited_once()
 
@@ -84,7 +107,7 @@ def test_get_business_success(client, mock_db_session):
     data = response.json()
     assert data["id"] == str(business_id)
     assert data["name"] == "Boutique Existante"
-    mock_db_session.get.assert_awaited_once_with(Business, business_id)
+    mock_db_session.get.assert_awaited_with(Business, business_id)
 
 
 def test_get_business_not_found(client, mock_db_session):
@@ -95,9 +118,34 @@ def test_get_business_not_found(client, mock_db_session):
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Business not found"
-    mock_db_session.get.assert_awaited_once_with(Business, business_id)
+    mock_db_session.get.assert_awaited_with(Business, business_id)
 
 
 def test_get_business_invalid_uuid(client):
     response = client.get("/businesses/invalid-uuid")
     assert response.status_code == 422
+
+
+def test_create_business_unauthenticated_returns_401(mock_db_session):
+    async def override_get_db():
+        yield mock_db_session
+
+    app.dependency_overrides.clear()
+    app.dependency_overrides[get_db] = override_get_db
+    unauthed_client = TestClient(app)
+    response = unauthed_client.post("/businesses", json={"name": "Boutique"})
+    assert response.status_code in (401, 403)
+    app.dependency_overrides.clear()
+
+
+def test_get_business_unauthenticated_returns_401(mock_db_session):
+    async def override_get_db():
+        yield mock_db_session
+
+    app.dependency_overrides.clear()
+    app.dependency_overrides[get_db] = override_get_db
+    unauthed_client = TestClient(app)
+    response = unauthed_client.get(f"/businesses/{uuid.uuid4()}")
+    assert response.status_code in (401, 403)
+    app.dependency_overrides.clear()
+

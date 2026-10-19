@@ -1,13 +1,14 @@
+import enum
 import uuid
 from datetime import datetime
-
-from sqlalchemy import DateTime, ForeignKey, Index, UniqueConstraint, func
+from sqlalchemy import DateTime, Enum, ForeignKey, Index, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-
 from app.core.database import Base
 
-
+class MemberRole(str, enum.Enum):
+    owner = "owner"
+    member = "member"
 class BusinessMember(Base):
     __tablename__ = "business_members"
 
@@ -34,6 +35,12 @@ class BusinessMember(Base):
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
     )
+    role: Mapped[MemberRole | None] = mapped_column(
+        Enum(MemberRole, name="member_role"),
+        nullable=True,
+        server_default=MemberRole.member.value,
+        default=MemberRole.member,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -52,4 +59,6 @@ class BusinessMember(Base):
     def __init__(self, **kwargs):
         if kwargs.get("id") is None:
             kwargs["id"] = uuid.uuid4()
+        if "role" not in kwargs:
+            kwargs["role"] = MemberRole.member
         super().__init__(**kwargs)
