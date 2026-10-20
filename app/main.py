@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from app.api.routes import auth, businesses, health, products
+from app.api.routes import auth, businesses, health, instagram, products
 
 app = FastAPI(
     title="WhatsApp Agent API",
@@ -8,5 +8,6 @@ app = FastAPI(
 
 app.include_router(health.router)
 app.include_router(auth.router)
-app.include_router(businesses.router)   
+app.include_router(businesses.router)
 app.include_router(products.router)
+app.include_router(instagram.router)
